@@ -1,27 +1,40 @@
-// الملف: proxy.js
+// الملف: my-proxy/api/proxy.js
 const fetch = require('node-fetch');
 
 module.exports = async (req, res) => {
-    const videoUrl = req.query.url;
+    // نستخدم req.query.url للحصول على الرابط من الطلب
+    const { url } = req.query;
 
-    if (!videoUrl) {
-        return res.status(400).send("Error: No URL provided.");
+    // التحقق من وجود الرابط
+    if (!url) {
+        return res.status(400).json({ error: "الرجاء توفير رابط في معامل 'url'" });
     }
 
     try {
-        const response = await fetch(videoUrl, {
+        // إرسال الطلب إلى الخادم الأصلي مع رؤوس تحاكي المتصفح
+        const response = await fetch(url, {
             headers: {
-                'Referer': 'https://the-original-website.com/', // ⚠️ استبدل هذا
-                'Origin': 'https://the-original-website.com/',   // ⚠️ واستبدل هذا
-                'User-Agent': 'Mozilla/5.0'
+                'Referer': new URL(url).origin,
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             }
         });
 
-        // إعادة بث الفيديو
-        res.setHeader('Content-Type', response.headers.get('content-type'));
+        // التأكد من أن الطلب للخادم الأصلي كان ناجحًا
+        if (!response.ok) {
+            // إذا فشل، نرجع نفس حالة الفشل للمستخدم
+            return res.status(response.status).send(`فشل الخادم الأصلي بالحالة: ${response.status}`);
+        }
+        
+        // إعادة توجيه الرؤوس المهمة من الخادم الأصلي إلى المستخدم
+        res.setHeader('Content-Type', response.headers.get('content-type') || 'application/vnd.apple.mpegurl');
+        res.setHeader('Access-Control-Allow-Origin', '*'); // السماح للمشغل بالوصول
+
+        // إعادة بث محتوى الفيديو مباشرة إلى المستخدم
         response.body.pipe(res);
 
     } catch (error) {
-        res.status(500).send("Proxy Error: " + error.message);
+        // في حال حدوث أي خطأ غير متوقع
+        console.error("حدث خطأ فادح في الخادم الوسيط:", error);
+        res.status(500).json({ error: "حدث خطأ داخلي في الخادم الوسيط", details: error.message });
     }
 };
